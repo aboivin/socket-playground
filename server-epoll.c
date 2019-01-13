@@ -7,30 +7,16 @@
 #include <unistd.h>
 
 #define MAX_EVENTS 5
-#define READ_SIZE 10
 
-int main(){
-
-  int running = 1, event_count, i;
-  size_t bytes_read;
-  char read_buffer[READ_SIZE + 1];
-  struct epoll_event event, events[MAX_EVENTS];
-  int epoll_fd = epoll_create1(0);
- 
-  if(epoll_fd == -1)
-  {
-    fprintf(stderr, "Failed to create epoll file descriptor\n");
-    return 1;
-  }
- 
-  //create the server socket
+int waitForTCPConnection(int portNumber) {
+    //create the server socket
   int socketDescriptor = socket(AF_INET,SOCK_STREAM,0);
   
   //define the server address
   //creating the address as same way we have created for TCPclient
   struct sockaddr_in serverAddress;
   serverAddress.sin_family = AF_INET;
-  serverAddress.sin_port = htons(9002);
+  serverAddress.sin_port = htons(portNumber);
   serverAddress.sin_addr.s_addr = INADDR_ANY;
 
   //calling bind function to oir specified IP and port
@@ -42,39 +28,57 @@ int main(){
   //accept(socketWeAreAccepting,structuresClientIsConnectingFrom,)
   int client_socket = accept(socketDescriptor, NULL, NULL);
 
- printf("\r\n%d", client_socket);
+  printf("\r\n%d", client_socket);
+  return client_socket;
+}
 
+int registerEpollFD(int epoll_fd, int fd) {
+  struct epoll_event event;
   event.events = EPOLLIN;
-  event.data.fd = client_socket;
+  event.data.fd = fd;
  
-  if(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_socke, &event))
+  if(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &event))
   {
     fprintf(stderr, "Failed to add file descriptor to epoll\n");
     close(epoll_fd);
     return 1;
   }
+}
+
+int main(){
+
+  int running = 1, event_count, i;
+  struct epoll_event events[MAX_EVENTS];
+  int epoll_fd = epoll_create1(0);
+ 
+  if(epoll_fd == -1)
+  {
+    fprintf(stderr, "Failed to create epoll file descriptor\n");
+    return 1;
+  }
+ 
+  int client_socket = waitForTCPConnection(9002);
+  registerEpollFD(epoll_fd, client_socket);
+
+  int client_socket2 = waitForTCPConnection(9003);
+  registerEpollFD(epoll_fd, client_socket2);
 
   while(running)
   {
     printf("\nPolling for input...\n");
+    sleep(3);
     event_count = epoll_wait(epoll_fd, events, MAX_EVENTS, 30000);
     printf("%d ready events\n", event_count);
     for(i = 0; i < event_count; i++)
     {
-      printf("Reading file descriptor '%d' -- ", events[i].data.fd);
-      bytes_read = read(events[i].data.fd, read_buffer, READ_SIZE);
-      printf("%zd bytes read.\n", bytes_read);
-      read_buffer[bytes_read] = '\0';
-      printf("Read '%s'\n", read_buffer);
- 
-      if(!strncmp(read_buffer, "stop\n", 5))
-        running = 0;
-    }
-
       char receivedData[256];
-  recv(client_socket, receivedData, 256, 0);
-  printf("\r\n%s", receivedData);
-
+      recv(events[i].data.fd, receivedData, 256, 0);
+      printf("\r\n%s", receivedData);
+ 
+      if(!strncmp(receivedData, "stop\n", 5)) {
+        running = 0;
+      }
+    }
   }
  
   if(close(epoll_fd))
@@ -85,7 +89,7 @@ int main(){
 
    close(client_socket);
   //close the socket
-  sleep(10);
-  close(socketDescriptor);
+  //sleep(10);
+  //close(socketDescriptor);
  
 }
